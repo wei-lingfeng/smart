@@ -42,7 +42,6 @@ def barycorr(header, instrument='nirspec'):
 	barycentric correction (float*u(km/s))
 
 	"""
-	print(instrument)
 	if (instrument == 'nirspec') or (instrument == 'hires'):
 		longitude = 360 - (155 + 28.7/60 ) # degrees
 		latitude  = 19 + 49.7/60 #degrees
