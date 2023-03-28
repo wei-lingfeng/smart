@@ -52,11 +52,11 @@ def integralResample(xh, yh, xl, nsamp=100, **kwargs):
     if xl[0] < xh[0] or xl[-1] > xh[-1]: 
         raise ValueError('\nLow resolution x range {} to {} must be within high resolution x range {} to {}'.format(xl[0],xl[-1],xh[0],xh[-1]))
     if len(xl) > len(xh):
-        # supersample the xh and yh:
-        f = interp1d(xh, yh)
-        xh = xl.copy()
-        yh = f(xh)
-        # raise ValueError('\nTarget x-axis must be lower resolution than original x-axis')
+        # # supersample the xh and yh:
+        # f = interp1d(xh, yh)
+        # xh = xl.copy()
+        # yh = f(xh)
+        raise ValueError('\nTarget x-axis must be lower resolution than original x-axis')
 
     # Use flux preserving resample method
     if method == 'splat':
