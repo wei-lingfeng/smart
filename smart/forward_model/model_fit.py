@@ -201,7 +201,11 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 			else:
 				model = smart.continuum(data=data, mdl=model)
 				for i in range(niter):
-					model = smart.continuum(data=data, mdl=model)
+					model_temp = smart.continuum(data=data, mdl=model)
+					if any(np.isnan(model_temp.flux)):
+						print(f'Warning! Error in model.flux detected, breaking the iteration at i={i}.')
+						break
+					model = model_temp
 		elif data.instrument == 'apogee':
 			## set the order in the continuum fit
 			deg         = 5
