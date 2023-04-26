@@ -18,7 +18,7 @@ def InterpModel(teff, logg=4, metal=0, alpha=0, modelset='phoenix-aces-agss-cond
     if instrument.lower() in ['nirspec', 'hires', 'igrins']:
         path     = BASE + '/../libraries/%s/%s-O%s/'%(smart.ModelSets[modelset.lower()], instrument.upper(), str(order).upper().strip('Oo'))
     else:
-        path     = BASE + '/../libraries/%s/%s-%s/'%(smart.ModelSets[modelset.lower()], instrument.upper(), order.upper())
+        path     = BASE + '/../libraries/%s/%s-%s/'%(smart.ModelSets[modelset.lower()], instrument.upper(), str(order).upper())
     Gridfile = BASE + '/../libraries/%s/%s_gridparams.csv'%(smart.ModelSets[modelset.lower()], smart.ModelSets[modelset.lower()])
 
     if modelset.lower() == 'btsettl08':
@@ -46,18 +46,18 @@ def InterpModel(teff, logg=4, metal=0, alpha=0, modelset='phoenix-aces-agss-cond
             filename = 'btsettl08_t'+ str(int(temp.data[0])) + '_g' + '{0:.2f}'.format(float(logg)) + '_z-' + '{0:.2f}'.format(float(metal)) + '_en' + '{0:.2f}'.format(float(alpha)) + '_NIRSPEC-O' + str(order) + '-RAW.txt'    
         elif modelset.lower() == 'sonora':
             if instrument.lower() == 'nirspec':
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-O%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-O%s.fits'%(instrument.upper(), str(order).upper())
             else:
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         elif modelset.lower() == 'marcs-apogee-dr15':
             cm      = kwargs.get('cm', 0)
             nm      = kwargs.get('nm', 0) 
-            filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_cm{0:.2f}'.format(float(cm)) + '_nm{0:.2f}'.format(float(nm)) + '_%s-%s.fits'%(instrument.upper(), order.upper())
+            filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_cm{0:.2f}'.format(float(cm)) + '_nm{0:.2f}'.format(float(nm)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         else: 
             if instrument.lower()in ['nirspec', 'hires']:
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-O%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-O%s.fits'%(instrument.upper(), str(order).upper())
             else:
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         
         # Read in the model FITS file
         if modelset.lower() == 'btsettl08': 
