@@ -151,7 +151,7 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 
 	# apply telluric
 	if tell is True:
-		model = smart.applyTelluric(model=model, tell_alpha=tell_alpha, airmass=airmass, pwv=pwv, instrument=data.instrument)
+		model = smart.applyTelluric(model=model, tell_alpha=tell_alpha, airmass=airmass, pwv=pwv, instrument=instrument)
 
 	# fringe 
 	if include_fringe_model is True:
