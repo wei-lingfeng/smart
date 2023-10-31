@@ -208,7 +208,8 @@ def InterpModel(teff, logg=4, metal=0, alpha=0, kzz=0, modelset='phoenix-aces-ag
                              set(T1['en'][np.where( (T1['teff'] == x1) & (T1['logg'] == y1) & (T1['M_H'] == z1) & (T1['en'] >= alpha) )])))
             #print('alpha:', z0, alpha, z1)
     except:
-        raise ValueError('Model Parameters Teff: %0.3f, logg: %0.3f, [M/H]: %0.3f, Alpha: %0.3f are outside the model grid.'%(teff, logg, metal, alpha))
+        # raise ValueError('Model Parameters Teff: %0.3f, logg: %0.3f, [M/H]: %0.3f, Alpha: %0.3f are outside the model grid.'%(teff, logg, metal, alpha))
+        raise ValueError(f"Model Parameters Teff: {teff:.3f}, logg: {logg:.3f}, [M/H]: {metal:0.3f}, Alpha: {alpha:0.3f} are outside the model grid.\nModel range: Teff: {np.min(T1['teff']):.2f}~{np.max(T1['teff']):.2f}, logg:{np.min(T1['logg']):.2f}~{np.max(T1['logg']):.2f}, alpha:{np.min(T1['en']):.2f}~{np.max(T1['en']):.2f}")
 
 
     if 'sonora' in modelset.lower():
