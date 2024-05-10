@@ -50,7 +50,7 @@ class Spectrum():
 	"""
 	def __init__(self, **kwargs):
 		self.instrument = kwargs.get('instrument','nirspec')
-		if self.instrument == 'nirspec':
+		if (self.instrument == 'nirspec') or (self.instrument == 'kpic'):
 			self.name      = kwargs.get('name')
 			self.order     = kwargs.get('order')
 			self.path      = kwargs.get('path')
@@ -69,11 +69,12 @@ class Spectrum():
 			self.wave   = hdulist[0].data
 			self.flux   = hdulist[1].data
 			self.noise  = hdulist[2].data
-			try:
-				self.sky = hdulist[3].data
-			except IndexError:
-				print("No sky line data.")
-				self.sky = np.zeros(self.wave.shape)
+			if self.instrument == 'nirspec':
+				try:
+					self.sky = hdulist[3].data
+				except IndexError:
+					print("No sky line data.")
+					self.sky = np.zeros(self.wave.shape)
 
 			self.mask  = []
 
@@ -90,7 +91,7 @@ class Spectrum():
 			self.path      = kwargs.get('path')
 			self.datatype  = kwargs.get('datatype','aspcap')
 			self.apply_sigma_mask = kwargs.get('apply_sigma_mask',False)
-			self.apply_tell = kwargs.get('apply_tell', False)
+			self.apply_tell = kwargs.get('apply_tell', True)
 			self.chip      = kwargs.get('chip', 'all')
 
 			hdulist        = fits.open(self.path)
@@ -328,6 +329,7 @@ class Spectrum():
 			self.apply_sigma_mask = kwargs.get('apply_sigma_mask', False)
 			self.flat_tell = kwargs.get('flat_tell', False)
 			self.spec_a0v  = kwargs.get('spec_a0v', False)
+			self.applymask = kwargs.get('applymask',False)
 
 			# assign IGRINS data index
 			igrins_order_dict = {'77':6}
@@ -352,7 +354,10 @@ class Spectrum():
 
 			#The indices 0 to 3 correspond to wavelength, flux, noise, and sky
 			if self.flat_tell:
-				self.header = wave[0].header
+				if '_calibrated' in self.name2:
+					self.header = wave[0].header
+				else:
+					self.header = hdulist[0].header
 			else:
 				self.header = hdulist[0].header
 
@@ -369,13 +374,15 @@ class Spectrum():
 			self.oriFlux  = self.flux
 			self.oriNoise = self.noise
 
-			# masking out any NaNs in noise, wave, flux
-			mask_locs = np.any([np.isnan(self.noise).tolist(), np.isnan(self.wave).tolist(), np.isnan(self.flux).tolist()], axis=0)
-
-			self.wave  = self.wave[~mask_locs]
-			self.flux  = self.flux[~mask_locs]
-			self.noise = self.noise[~mask_locs]
-			self.mask  = np.arange(len(self.oriWave))[mask_locs]
+			self.mask = []
+			if self.applymask:
+				# masking out any NaNs in noise, wave, flux
+				mask_locs = np.any([np.isnan(self.noise).tolist(), np.isnan(self.wave).tolist(), np.isnan(self.flux).tolist()], axis=0)
+	
+				self.wave  = self.wave[~mask_locs]
+				self.flux  = self.flux[~mask_locs]
+				self.noise = self.noise[~mask_locs]
+				self.mask  = np.arange(len(self.oriWave))[mask_locs]
 
 			# define a list for storing the best wavelength shift
 			self.bestshift = []
