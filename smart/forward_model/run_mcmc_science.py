@@ -8,7 +8,7 @@ import matplotlib.gridspec as gridspec
 from astropy.io import fits
 import emcee
 #from schwimmbad import MPIPool
-from multiprocessing import Pool
+from multiprocessing import Pool, set_start_method
 import smart
 import model_fit
 import mcmc_utils
@@ -93,7 +93,7 @@ parser.add_argument("-pixel_end",type=int,
 #parser.add_argument("-alpha_tell",type=float,
 #    default=1.0, help="telluric alpha; default 1.0")
 
-parser.add_argument("-applymask",type=bool,
+parser.add_argument("-apply_sigma_mask",type=bool,
     default=False, help="apply a simple mask based on the STD of the average flux; default is False")
 
 parser.add_argument("-plot_show",type=bool,
@@ -129,7 +129,7 @@ lsf                    = float(args.lsf[0])
 ndim, nwalkers, step   = int(args.ndim), int(args.nwalkers), int(args.step)
 burn                   = int(args.burn)
 moves                  = float(args.moves)
-applymask              = args.applymask
+apply_sigma_mask              = args.apply_sigma_mask
 pixel_start, pixel_end = int(args.pixel_start), int(args.pixel_end)
 #pwv                    = float(args.pwv)
 #alpha_tell             = float(args.alpha_tell[0])
@@ -154,17 +154,19 @@ dt_string = now.strftime("%H:%M:%S")
 
 #####################################
 
-data        = smart.Spectrum(name=sci_data_name, order=order, path=data_path, applymask=applymask, instrument=instrument)
+data        = smart.Spectrum(name=sci_data_name, order=order, path=data_path, apply_sigma_mask=apply_sigma_mask, instrument=instrument)
 
 if instrument != 'hires':
 	tell_data_name2 = tell_data_name + '_calibrated'
-	tell_sp     = smart.Spectrum(name=tell_data_name2, order=data.order, path=tell_path, applymask=applymask, instrument=instrument)
+	tell_sp     = smart.Spectrum(name=tell_data_name2, order=data.order, path=tell_path, apply_sigma_mask=apply_sigma_mask, instrument=instrument)
 
-	data.updateWaveSol(tell_sp)
+	# TBD if the improved wavecal for KPIC data is possible
+	if instrument != 'kpic':
+		data.updateWaveSol(tell_sp)
 
 # MJD for logging
 # upgraded NIRSPEC
-if instrument == 'nirspec':
+if instrument in ['nirspec', 'kpic']:
 	if len(data.oriWave) == 2048:
 		mjd = data.header['MJD']
 	# old NIRSPEC
@@ -179,7 +181,7 @@ if coadd:
 	if not os.path.exists(save_to_path):
 		os.makedirs(save_to_path)
 	data1       = copy.deepcopy(data)
-	data2       = smart.Spectrum(name=sci_data_name2, order=order, path=data_path, applymask=applymask)
+	data2       = smart.Spectrum(name=sci_data_name2, order=order, path=data_path, apply_sigma_mask=apply_sigma_mask)
 	data.coadd(data2, method='pixel')
 
 	plt.figure(figsize=(16,6))
@@ -271,7 +273,9 @@ data          = copy.deepcopy(sci_data)
 
 if instrument != 'hires':
 	tell_sp       = copy.deepcopy(tell_data)
-	data.updateWaveSol(tell_sp)
+	
+	if instrument != 'kpic':
+		data.updateWaveSol(tell_sp)
 
 # barycentric corrction
 #barycorr      = smart.barycorr(data.header).value
@@ -279,7 +283,7 @@ if instrument != 'hires':
 
 ## read the input custom mask and priors
 lines          = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
-if instrument == 'nirspec':
+if instrument in ['nirspec', 'kpic']:
 	custom_mask    = json.loads(lines[5].split('custom_mask')[1])
 	priors         = ast.literal_eval(lines[6].split('priors ')[1])
 	barycorr       = json.loads(lines[13].split('barycorr')[1])
@@ -292,8 +296,17 @@ elif instrument == 'hires':
 if modelset == 'btsettl08' and priors['teff_min'] < 900: logg_max = 5.0
 else: logg_max = 5.5
 
+## apply a custom mask
+data.mask_custom(custom_mask=custom_mask)
+
 # limit of the flux nuisance parameter: 5 percent of the median flux
 A_const       = 0.05 * abs(np.median(data.flux))
+
+# KPIC DRP has underestimated noise (no read/dark current noise)
+if instrument == 'kpic':
+	N_max = 20.0
+else:
+	N_max = 5.0
 
 if modelset == 'btsettl08':
 	limits         = { 
@@ -305,7 +318,7 @@ if modelset == 'btsettl08':
 						'pwv_min':0.5,                            	'pwv_max':20.0,
 						'A_min':-A_const,							'A_max':A_const,
 						'B_min':-0.6,                              	'B_max':0.6,
-						'N_min':0.10,                               'N_max':5.0 				
+						'N_min':0.10,                               'N_max':N_max 				
 					}
 
 elif modelset == 'sonora':
@@ -318,7 +331,7 @@ elif modelset == 'sonora':
 						'pwv_min':0.5,                            	'pwv_max':20.0,
 						'A_min':-A_const,							'A_max':A_const,
 						'B_min':-0.6,                              	'B_max':0.6,
-						'N_min':0.10,                               'N_max':5.0 				
+						'N_min':0.10,                               'N_max':N_max 				
 					}
 
 elif modelset == 'phoenixaces':
@@ -331,7 +344,7 @@ elif modelset == 'phoenixaces':
 						'pwv_min':0.5,                            	'pwv_max':20.0,
 						'A_min':-A_const,							'A_max':A_const,
 						'B_min':-0.6,								'B_max':0.6,
-						'N_min':0.10,                               'N_max':5.50 				
+						'N_min':0.10,                               'N_max':N_max 				
 					}
 
 elif modelset.upper() == 'PHOENIX_BTSETTL_CIFIST2011_2015':
@@ -344,7 +357,7 @@ elif modelset.upper() == 'PHOENIX_BTSETTL_CIFIST2011_2015':
 						'pwv_min':0.5,                            	'pwv_max':20.0,
 						'A_min':-A_const,							'A_max':A_const,
 						'B_min':-0.6,								'B_max':0.6,
-						'N_min':0.10,                               'N_max':5.50 				
+						'N_min':0.10,                               'N_max':N_max				
 					}
 
 # HIRES wavelength calibration is not that precise, release the constraint for the wavelength offset nuisance parameter
@@ -355,9 +368,6 @@ if data.instrument == 'hires':
 if final_mcmc:
 	limits['rv_min'] = priors['rv_min'] - 10
 	limits['rv_max'] = priors['rv_max'] + 10
-
-## apply a custom mask
-data.mask_custom(custom_mask=custom_mask)
 
 ## add a pixel label for plotting
 length1     = len(data.oriWave)
@@ -480,11 +490,11 @@ pos = [np.array([	priors['teff_min']  + (priors['teff_max']   - priors['teff_min
 					priors['A_min']     + (priors['A_max']      - priors['A_min'])     * np.random.uniform(),
 					priors['B_min']     + (priors['B_max']      - priors['B_min'])     * np.random.uniform(),
 					priors['N_min']     + (priors['N_max']      - priors['N_min'])     * np.random.uniform()]) for i in range(nwalkers)]
-
 ## multiprocessing
 
+set_start_method('fork')
 with Pool() as pool:
-	#sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data, lsf, pwv), a=moves, pool=pool)
+	#sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data, lsf), a=moves, pool=pool)
 	sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data, lsf), a=moves, pool=pool,
 			moves=emcee.moves.KDEMove())
 	time1 = time.time()
@@ -707,14 +717,14 @@ file_log.close()
 
 
 # excel summary file
-cat = pd.DataFrame(columns=['date_obs','date_name','tell_name','data_path','tell_path','save_path',
-							'model_date','model_time','data_mask','order','coadd','mjd','med_snr','lsf',
-							'barycorr','modelset','priors','limits','ndim','nwalkers','step','burn',
-							'rv','e_rv','ue_rv','le_rv','vsini','e_vsini','ue_vsini','le_vsini',
-							'teff','e_teff','ue_teff','le_teff','logg','e_logg','ue_logg','le_logg',
-							'am','e_am','ue_am','le_am','pwv','e_pwv','ue_pwv','le_pwv',
-							'cflux','e_cflux','ue_cflux','le_cflux','cwave','e_cwave','ue_cwave','le_cwave',
-							'cnoise','e_cnoise','ue_cnoise','le_cnoise','wave_cal_err','chi2','dof','acceptance_fraction','autocorr_time'])
+#cat = pd.DataFrame(columns=['date_obs','date_name','tell_name','data_path','tell_path','save_path',
+#							'model_date','model_time','data_mask','order','coadd','mjd','med_snr','lsf',
+#							'barycorr','modelset','priors','limits','ndim','nwalkers','step','burn',
+#							'rv','e_rv','ue_rv','le_rv','vsini','e_vsini','ue_vsini','le_vsini',
+#							'teff','e_teff','ue_teff','le_teff','logg','e_logg','ue_logg','le_logg',
+#							'am','e_am','ue_am','le_am','pwv','e_pwv','ue_pwv','le_pwv',
+#							'cflux','e_cflux','ue_cflux','le_cflux','cwave','e_cwave','ue_cwave','le_cwave',
+#							'cnoise','e_cnoise','ue_cnoise','le_cnoise','wave_cal_err','chi2','dof','acceptance_fraction','autocorr_time'])
 
 
 med_snr      = np.nanmedian(data.flux/data.noise)
@@ -723,11 +733,11 @@ if instrument == 'nirspec':
 else:
 	wave_cal_err = np.nan
 
-cat = cat.append({	'date_obs':date_obs,'date_name':sci_data_name,'tell_name':tell_data_name,
+cat = pd.DataFrame({'date_obs':date_obs,'date_name':sci_data_name,'tell_name':tell_data_name,
 					'data_path':data_path,'tell_path':tell_path,'save_path':save_to_path,
-					'model_date':today.isoformat(),'model_time':dt_string,'data_mask':custom_mask,
+					'model_date':today.isoformat(),'model_time':dt_string,'data_mask':str(custom_mask),
 					'order':order,'coadd':coadd,'mjd':mjd,'med_snr':med_snr,'lsf':lsf, 'barycorr':barycorr,
-					'modelset':modelset, 'priors':priors, 'limits':limits, 
+					'modelset':modelset, 'priors':str(priors), 'limits':str(limits), 
 					'ndim':ndim, 'nwalkers':nwalkers,'step':step, 'burn':burn,
 					'rv':rv_mcmc[0]+barycorr, 'e_rv':max(rv_mcmc[1], rv_mcmc[2]), 'ue_rv':rv_mcmc[1], 'le_rv':rv_mcmc[2],
 					'vsini':vsini_mcmc[0], 'e_vsini':max(vsini_mcmc[1], vsini_mcmc[2]), 'ue_vsini':vsini_mcmc[1], 'le_vsini':vsini_mcmc[2],
@@ -738,7 +748,7 @@ cat = cat.append({	'date_obs':date_obs,'date_name':sci_data_name,'tell_name':tel
 					'cflux':A_mcmc[0], 'e_cflux':max(A_mcmc[1], A_mcmc[2]), 'ue_cflux':A_mcmc[1], 'le_cflux':A_mcmc[2],
 					'cwave':B_mcmc[0], 'e_cwave':max(B_mcmc[1], B_mcmc[2]), 'ue_cwave':B_mcmc[1], 'le_cwave':B_mcmc[2], 
 					'cnoise':N_mcmc[0],'e_cnoise':max(N_mcmc[1], N_mcmc[2]), 'ue_cnoise':N_mcmc[1], 'le_cnoise':N_mcmc[2], 
-					'wave_cal_err':wave_cal_err, }, ignore_index=True)
+					'wave_cal_err':wave_cal_err, }, index=[0])
 
 cat.to_excel(save_to_path + '/mcmc_summary.xlsx', index=False)
 
