@@ -97,16 +97,33 @@ class Spectrum():
 			hdulist        = fits.open(self.path)
 			
 			if self.datatype == 'aspcap':
-				crval1         = hdulist[1].header['CRVAL1']
-				cdelt1         = hdulist[1].header['CDELT1']
-				naxis1         = hdulist[1].header['NAXIS1']
-				self.header4   = hdulist[4].header
-				self.param     = hdulist[4].data['PARAM']
-				self.wave      = np.array(pow(10, crval1 + cdelt1 * np.arange(naxis1)))
-				self.oriWave   = np.array(pow(10, crval1 + cdelt1 * np.arange(naxis1)))
-				self.flux      = np.array(hdulist[1].data)
-				self.noise     = np.array(hdulist[2].data)
-
+				crval1         	= hdulist[1].header['CRVAL1']
+				cdelt1         	= hdulist[1].header['CDELT1']
+				naxis1         	= hdulist[1].header['NAXIS1']
+				self.header4   	= hdulist[4].header
+				self.param     	= hdulist[4].data['PARAM']
+				self.wave      	= np.array(pow(10, crval1 + cdelt1 * np.arange(naxis1)))
+				self.flux      	= np.array(hdulist[1].data)
+				self.noise     	= np.array(hdulist[2].data)
+				self.oriWave   	= np.array(pow(10, crval1 + cdelt1 * np.arange(naxis1)))
+				self.oriFlux	= np.array(hdulist[1].data)
+				self.oriNoise	= np.array(hdulist[2].data)
+				
+				# Store the wavelength for 3 filters respectively
+				starting_idx = np.where([(self.flux[i]==0) & (self.flux[i+1]!=0) for i in range(naxis1 - 1)])[0]
+				ending_idx 	 = np.where([(self.flux[i]!=0) & (self.flux[i+1]==0) for i in range(naxis1 - 1)])[0]
+				self.oriWave0 = [self.oriWave[end:start:-1] for start, end in zip(starting_idx[::-1], ending_idx[::-1])]
+				
+				# filter none zero flux
+				none_zero_flux 	= self.flux!=0
+				self.wave 		= self.wave[none_zero_flux]
+				self.flux 		= self.flux[none_zero_flux]
+				self.noise 		= self.noise[none_zero_flux]
+				self.oriWave 	= self.oriWave[none_zero_flux]
+				self.oriFlux	= self.oriFlux[none_zero_flux]
+				self.oriNoise	= self.oriNoise[none_zero_flux]
+				
+				self.apogee_mask = np.zeros_like(self.wave, dtype=bool)
 			
 			elif self.datatype == 'ap1d':
 				self.header4   = hdulist[4].header
@@ -272,6 +289,7 @@ class Spectrum():
 					idx = 0
 				
 				# mask out apogee badpix and nans.
+				self.nwave 	   = naxis1
 				self.apogee_mask = ((hdulist[3].data[idx]) & 1) | np.isnan(hdulist[1].data[idx])
 				self.wave      = np.ma.MaskedArray(np.array(pow(10, crval1 + cdelt1 * np.arange(1, naxis1+1))), mask=self.apogee_mask).compressed()
 				self.flux      = np.ma.MaskedArray(hdulist[1].data[idx], mask=self.apogee_mask).compressed()
@@ -285,16 +303,16 @@ class Spectrum():
 
 
 				# store the original parameters
-				self.oriWave   = np.array(pow(10, crval1 + cdelt1 * np.arange(1, naxis1+1)))	
+				self.oriWave   = np.power(10, crval1 + cdelt1 * np.arange(1, naxis1+1))
 				self.oriFlux   = hdulist[1].data[idx]
 				self.oriNoise  = hdulist[2].data[idx]
 				
-				# store the piece-wise wavelength using the headeer information; consistent with apVisit data model
-				self.oriWave0  = np.asarray([
+				# store the piece-wise wavelength using the header information; consistent with apVisit data model
+				self.oriWave0  = [
 					self.oriWave[hdulist[0].header['RMAX']:hdulist[0].header['RMIN']:-1], 
 					self.oriWave[hdulist[0].header['GMAX']:hdulist[0].header['GMIN']:-1], 
 					self.oriWave[hdulist[0].header['BMAX']:hdulist[0].header['BMIN']:-1]
-				])
+				]
 				
 				## APOGEE APVISIT has corrected the telluric absorption; the forward-modeling routine needs to put it back
 				#self.flux     *= self.tell
@@ -424,15 +442,17 @@ class Spectrum():
 			# set the outliers as the flux below 
 			#self.smoothFlux[self.smoothFlux <= self.avgFlux - 2 * self.stdFlux] = 0
 			#self.smoothFlux[ np.abs(self.smoothFlux - self.avgFlux ) <= 2 * self.stdFlux] = 0
-		
-			self.mask  = np.where(np.abs(self.flux - self.avgFlux ) >= 3. * self.stdFlux)[0]
-
+			
+			# self.mask is a boolean array with length self.naxis
+			# self.flux = self.oriFlux[~self.mask]
+			self.mask  = np.abs(self.oriFlux - self.avgFlux ) >= 3. * self.stdFlux
+			
 			if self.instrument == 'apogee':
-				noise_median = np.median(self.noise)
-				self.mask = np.union1d(self.mask, np.where(self.noise >= 3. * noise_median)[0])
-			self.wave  = np.delete(self.wave, self.mask)
-			self.flux  = np.delete(self.flux, self.mask)
-			self.noise = np.delete(self.noise, self.mask)
+				self.medianNoise = np.median(self.noise)
+				self.mask = np.logical_or.reduce((self.mask, self.apogee_mask, self.oriNoise >= 3. * self.medianNoise))
+			self.wave  = self.oriWave[~self.mask]
+			self.flux  = self.oriFlux[~self.mask]
+			self.noise = self.oriNoise[~self.mask]
 			
 			if self.instrument == 'nirspec':
 				self.sky   = np.delete(self.sky, self.mask)
