@@ -117,6 +117,68 @@ def continuum(data, mdl, deg=10, prop=False, tell=False):
 #def _continuumFit(x, c1, c0):
 #  return np.poly1d([c1, c0])(x)
 
+
+def fit_continuum(wave, flux, noise=None, degree=4, polynomial='standard', sigma_upper=3., sigma_lower=0.1, niter=10):
+    """Fit continuum with iterative sigma clipping
+
+    Parameters
+    ----------
+    wave : array-like
+        Wavelength array
+    flux : array-like
+        Spectral flux array
+    noise : array-like, optional
+        Noise array, by default None
+    degree : int, optional
+        Polynomial degree, by default 4
+    polynomial : str, optional
+        Polynomial type, 'standard' or 'Chebychev' as in Jo Bovy's apogee.continuum._fit_aspcap (https://github.com/jobovy/apogee/tree/main), by default 'standard'
+    sigma_upper : float, optional
+        Upper bound of sigma clip, by default 3
+    sigma_lower : float, optional
+        Lower bound of sigma clip, by default 0.1
+    niter : int, optional
+        Number of iterations, by default 10
+
+    Returns
+    -------
+    cont : array
+        Continuum with the same length as wave and flux
+    """
+    
+    if polynomial=='chebychev':
+        polynomial = polynomial.title()
+    
+    assert polynomial in ['standard', 'Chebychev'], f"polynomial must be either 'standard' or 'Chebychev', not {polynomial}."
+
+    
+    if noise is None:
+        weight = None
+    else:
+        weight = 1./noise**2
+    
+    if polynomial == 'standard':
+        for i in range(niter):
+            poly = np.poly1d(np.polyfit(wave, flux, deg=degree, w=weight))
+            cont = poly(wave)
+            residual = flux - cont
+            sigma = np.std(residual)
+            mask = (residual < sigma_upper * sigma) | (residual > -sigma_lower * sigma)
+            flux[~mask] = poly(wave[~mask])
+
+        return poly(wave)
+
+    elif polynomial == 'Chebychev':
+        for i in range(niter):
+            chpoly = np.polynomial.Chebyshev.fit(wave, flux, deg=degree, w=weight)
+            cont = chpoly(wave)
+            residual = flux - cont
+            sigma = np.std(residual)
+            mask = (residual < sigma_upper * sigma) | (residual > -sigma_lower * sigma)
+            flux[~mask] = chpoly(wave[~mask])
+        
+        return chpoly(wave)
+
 def _continuumFit(x, c2, c1, c0):
    return np.poly1d([c2, c1, c0])(x)
 

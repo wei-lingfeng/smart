@@ -33,11 +33,11 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 	"""
 
 	# read in the parameters
-	order        = kwargs.get('order', '33')
-	modelset     = kwargs.get('modelset', 'btsettl08')
-	instrument   = kwargs.get('instrument', 'nirspec')
-	veiling      = kwargs.get('veiling', 0)    # flux veiling parameter
-	lsf          = kwargs.get('lsf', 4.5)   # instrumental LSF
+	order       = kwargs.get('order', '33')
+	modelset    = kwargs.get('modelset', 'btsettl08')
+	instrument  = kwargs.get('instrument', 'nirspec')
+	veiling     = kwargs.get('veiling', 0)    # flux veiling parameter
+	lsf         = kwargs.get('lsf', 4.5)   # instrumental LSF
 	include_fringe_model = kwargs.get('include_fringe_model', False)
 	slow_rotation_broaden = kwargs.get('slow_rotation_broaden', False)
 
@@ -49,15 +49,15 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 			import apogee_tools as ap
 		except ImportError:
 			print('Need to install the package "apogee_tools" (https://github.com/jbirky/apogee_tools) \n')
-		xlsf       = kwargs.get('xlsf', np.linspace(-7.,7.,43))   # APOGEE instrumental LSF sampling
-		wave_off1  = kwargs.get('wave_off1') # wavelength offset for chip a
-		wave_off2  = kwargs.get('wave_off2') # wavelength offset for chip b
-		wave_off3  = kwargs.get('wave_off3') # wavelength offset for chip c
-		c0_1       = kwargs.get('c0_1')      # constant flux offset for chip a
+		xlsf		= kwargs.get('xlsf', np.linspace(-7.,7.,43))   # APOGEE instrumental LSF sampling
+		wave_off1 	= kwargs.get('wave_off1', 0) # wavelength offset for chip a
+		wave_off2 	= kwargs.get('wave_off2', 0) # wavelength offset for chip b
+		wave_off3 	= kwargs.get('wave_off3', 0) # wavelength offset for chip c
+		c0_1      	= kwargs.get('c0_1', 0)      # constant flux offset for chip a
 		#c0_2       = kwargs.get('c0_2')      # linear flux offset for chip a
-		c1_1       = kwargs.get('c1_1')      # constant flux offset for chip b
+		c1_1       	= kwargs.get('c1_1', 0)      # constant flux offset for chip b
 		#c1_2       = kwargs.get('c1_2')      # linear flux offset for chip b
-		c2_1       = kwargs.get('c2_1')      # constant flux offset for chip c
+		c2_1       	= kwargs.get('c2_1', 0)      # constant flux offset for chip c
 		#c2_2       = kwargs.get('c2_2')      # linear flux offset for chip c
 
 	tell       = kwargs.get('tell', True) # apply telluric
@@ -75,6 +75,12 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 	data       = kwargs.get('data', None) # for continuum correction and resampling
 
 	output_stellar_model = kwargs.get('output_stellar_model', False)
+	
+	if data is not None and np.ma.isMaskedArray(data.flux):
+		data = copy.deepcopy(data)
+		data.wave = data.wave.compressed()
+		data.flux = data.flux.compressed()
+		data.noise = data.noise.compressed()
 	
 	if data is not None and instrument in ['nirspec', 'hires', 'igrins']:
 		order = data.order
@@ -187,6 +193,10 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 			model1.wave = stellar_model.wave
 			model2.wave = stellar_model.wave
 
+	# correct model continuum
+	# model.flux /= smart.fit_continuum(model.wave, model.flux)
+	model.normalize()
+	
 	# integral resampling
 	if data is not None:
 		if instrument in ['nirspec', 'hires', 'igrins']:
@@ -202,7 +212,7 @@ def makeModel(teff, logg=5, metal=0, vsini=1, rv=0, tell_alpha=1.0, airmass=1.0,
 					model2.flux = np.array(smart.integralResample(xh=model2.wave, yh=model2.flux, xl=data.wave))
 					model2.wave = data.wave
 
-		# contunuum correction
+		# continuum correction
 		if data.instrument in ['nirspec', 'hires', 'igrins', 'kpic']:
 			niter = 5 # continuum iteration
 			if output_stellar_model:
