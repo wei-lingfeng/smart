@@ -9,16 +9,19 @@ from astropy.io import fits
 import emcee
 import tellurics
 import smart
-from multiprocessing import Pool
+from multiprocessing import Pool, set_start_method
 import corner
 import os
 import sys
 import time
 import copy
 import json
+import ast
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
+
+
 
 parser = argparse.ArgumentParser(description="Run the forward-modeling routine for telluric files",\
 	usage="run_mcmc_telluric.py order date_obs tell_data_name tell_path save_to_path")
@@ -38,8 +41,8 @@ parser.add_argument("tell_path",type=str,
 parser.add_argument("save_to_path",type=str,
     default=None, help="output path", nargs="+")
 
-#parser.add_argument("-ndim",type=int,
-#    default=5, help="number of dimension; default 17")
+parser.add_argument("-ndim",type=int,
+    default=5, help="number of dimension; default 5")
 
 parser.add_argument("-nwalkers",type=int,
     default=50, help="number of walkers of MCMC; default 50")
@@ -68,6 +71,8 @@ parser.add_argument("-applymask",type=bool,
 parser.add_argument("-save",type=bool,
     default=True, help="save the fitted LSF and telluric alpha to the fits file header; default is True")
 
+parser.add_argument("-include_fringe_model", action='store_true', help="model the fringe pattern; default False")
+
 args = parser.parse_args()
 
 ######################################################################################################
@@ -78,18 +83,17 @@ date_obs               = str(args.date_obs[0])
 tell_data_name         = str(args.tell_data_name[0])
 tell_path              = str(args.tell_path[0])
 save_to_path           = str(args.save_to_path[0])
-#ndim, nwalkers, step   = int(args.ndim), int(args.nwalkers), int(args.step)
-nwalkers, step         = int(args.nwalkers), int(args.step)
+ndim, nwalkers, step   = int(args.ndim), int(args.nwalkers), int(args.step)
 burn                   = int(args.burn)
 moves                  = float(args.moves)
 priors                 = args.priors
 applymask              = args.applymask
 pixel_start, pixel_end = int(args.pixel_start), int(args.pixel_end)
 save                   = args.save
+include_fringe_model   = args.include_fringe_model
 
-#lines                  = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
-#custom_mask            = json.loads(lines[3].split('custom_mask')[1])
-custom_mask = [] # test
+lines                  = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
+custom_mask            = json.loads(lines[3].split('custom_mask')[1])
 
 if order == 35: applymask = True
 
@@ -103,6 +107,27 @@ if len(tell_sp.oriWave) == 2048:
 # old NIRSPEC
 else:
 	mjd = tell_sp.header['MJD-OBS']
+
+# read the pre-determined fringe parameters
+if include_fringe_model:
+	fringe_param   = ast.literal_eval(lines[4].split('fringe ')[1])
+
+	A1=float(fringe_param['A1']) 
+	A2=float(fringe_param['A2']) 
+	A3=float(fringe_param['A3']) 
+	Dos1=float(fringe_param['Dos1']) 
+	Dos2=float(fringe_param['Dos2']) 
+	Dos3=float(fringe_param['Dos3']) 
+	R1=float(fringe_param['R1'])
+	R2=float(fringe_param['R2'])
+	R3=float(fringe_param['R3'])
+	phi1=float(fringe_param['phi1'])
+	phi2=float(fringe_param['phi2']) 
+	phi3=float(fringe_param['phi3'])
+
+	print(A1, Dos1, R1, phi1)
+	print(A2, Dos2, R2, phi2)
+	print(A3, Dos3, R3, phi3)
 
 ###########################################################################################################
 """
@@ -138,7 +163,7 @@ save_to_path: 	str
 tell_data_name       = tell_sp.name
 tell_path            = tell_sp.path
 order                = tell_sp.order
-ndim                 = 17
+ndim                 = 6
 #applymask            = False
 #pixel_start          = 10
 #pixel_end            = -30
@@ -151,10 +176,6 @@ tell_sp.mask_custom(custom_mask=custom_mask)
 length1     = len(tell_sp.oriWave)
 pixel       = np.delete(np.arange(length1),tell_sp.mask)
 pixel       = pixel[pixel_start:pixel_end]
-
-# initial guess
-a1_1, a1_0, k1_1, k1_0,       p1 = -2.17836489e-05, 5.15243203e-01,  -9.39812972e-11,  2.07813697e+00,                   1.76308808e-10
-a2_1, a2_0, k2_2, k2_1, k2_0, p2 =  1.52359993e-05, -3.44352484e-01,  1.32559234e-08, -1.59228833e-08,  8.52241994e-01,  1.40809969e-10
 
 if save_to_path is None:
 	save_to_path = './mcmc'
@@ -199,43 +220,14 @@ if priors is None:
 	#pwv_min_index = np.where(pwv_chi2_array == np.min(pwv_chi2_array))[0][0]
 	#pwv_0         = pwv_list[pwv_min_index]
 
-	priors      =	{	'lsf_min':4.9  		         ,  'lsf_max':5.0,
-						'airmass_min':1.02           ,  'airmass_max':1.03,		
-						'pwv_min':1.48               ,  'pwv_max':1.49,
-						'A_min':0.0297 		         ,  'A_max':0.0298,
-						'B_min':0.0135  	         ,  'B_max':0.0136,
-						'N_min':0.99     	         ,  'N_max':1.01,
-						'a1_1_min':a1_1*0.9          , 'a1_1_max':a1_1*1.1 ,    
-						'a1_0_min':a1_0*0.9          , 'a1_0_max':a1_0*1.1 ,    
-						'k1_1_min':k1_1*0.9          , 'k1_1_max':k1_1*1.1 ,    
-						'k1_0_min':k1_0*0.9          , 'k1_0_max':k1_0*1.1 ,    
-						'p1_min':max(p1*0.9, -np.pi) , 'p1_max':min(p1*1.1, np.pi) ,    
- 						'a2_1_min':a2_1*0.9          , 'a2_1_max':a2_1*1.1 ,    
-						'a2_0_min':a2_0*0.9          , 'a2_0_max':a2_0*1.1 ,    
-						'k2_2_min':k2_2*0.9          , 'k2_2_max':k2_2*1.1 ,    
-						'k2_1_min':k2_1*0.9          , 'k2_1_max':k2_1*1.1 ,    
-						'k2_0_min':k2_0*0.9          , 'k2_0_max':k2_0*1.1 ,    
-						'p2_min':max(p2*0.9, -np.pi) , 'p2_max':min(p2*1.1, np.pi) ,
+	priors      =	{	'lsf_min':3.0  		,  'lsf_max':8.0,
+						'airmass_min':1.0   ,  'airmass_max':3.0,		
+						'pwv_min':0.5       ,	'pwv_max':20.0,
+						'A_min':-0.1 		,  'A_max':0.1,
+						'B_min':-0.04  	    ,  'B_max':0.04,
+						'N_min':1.0  	    ,  'N_max':10.0    
 					}
 
-	#priors      =	{	'lsf_min':4.0  		         ,  'lsf_max':5.5,
-	#					'airmass_min':1.00           ,  'airmass_max':1.50,		
-	#					'pwv_min':0.5                ,  'pwv_max':5.0,
-	#					'A_min':-1.0 		         ,  'A_max':1.0,
-	#					'B_min':-0.02  		         ,  'B_max':0.02,
-	#					'N_min':0.99     	         ,  'N_max':1.01,
-	#					'a1_1_min':a1_1*0.9          , 'a1_1_max':a1_1*1.1 ,    
-	#					'a1_0_min':a1_0*0.9          , 'a1_0_max':a1_0*1.1 ,    
-	#					'k1_1_min':k1_1*0.9          , 'k1_1_max':k1_1*1.1 ,    
-	#					'k1_0_min':k1_0*0.9          , 'k1_0_max':k1_0*1.1 ,    
-	#					'p1_min':max(p1*0.9, -np.pi) , 'p1_max':min(p1*1.1, np.pi) ,    
- 	#					'a2_1_min':a2_1*0.9          , 'a2_1_max':a2_1*1.1 ,    
-	#					'a2_0_min':a2_0*0.9          , 'a2_0_max':a2_0*1.1 ,    
-	#					'k2_2_min':k2_2*0.9          , 'k2_2_max':k2_2*1.1 ,    
-	#					'k2_1_min':k2_1*0.9          , 'k2_1_max':k2_1*1.1 ,    
-	#					'k2_0_min':k2_0*0.9          , 'k2_0_max':k2_0*1.1 ,    
-	#					'p2_min':max(p2*0.9, -np.pi) , 'p2_max':min(p2*1.1, np.pi) ,
-	#				}
 
 tell_sp.wave    = tell_sp.wave[pixel_start:pixel_end]
 tell_sp.flux    = tell_sp.flux[pixel_start:pixel_end]
@@ -320,11 +312,13 @@ def lnlike(theta, data=data):
 	"""
 	## Parameters MCMC
 
-	lsf, airmass, pwv, A, B, N, a1_1, a1_0, k1_1, k1_0, p1, a2_1, a2_0, k2_2, k2_1, k2_0, p2  = theta
+	lsf, airmass, pwv, A, B, N = theta
 
-	model = tellurics.makeTelluricModelFringeWaveDependent(	lsf, airmass, pwv, A, B,
-												a1_1, a1_0, k1_1, k1_0, p1, a2_1, a2_0, k2_2, k2_1, k2_0, p2,
-												data=data, deg=2, niter=None)
+	if include_fringe_model:
+		model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=None, include_fringe_model=include_fringe_model,
+			A1=A1, A2=A2, A3=A3, Dos1=Dos1, Dos2=Dos2, Dos3=Dos3, R1=R1, R2=R2, R3=R3, phi1=phi1, phi2=phi2, phi3=phi3)
+	else:
+		model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=None)
 
 	chisquare = smart.chisquare(data, model)/N**2
 
@@ -335,44 +329,22 @@ def lnprior(theta):
 	Specifies a flat prior
 	"""
 	## Parameters for theta
-	lsf, airmass, pwv, A, B, N, a1_1, a1_0, k1_1, k1_0, p1, a2_1, a2_0, k2_2, k2_1, k2_0, p2 = theta
+	#lsf, airmass, pwv, alpha, A, B = theta
+	lsf, airmass, pwv, A, B, N = theta
 
-	limits =  { 'lsf_min':2.0  		,	'lsf_max':10.0,
-				'airmass_min':1.0   ,	'airmass_max':3.0,
+	limits =  { 'lsf_min':2.0  		,  'lsf_max':10.0,
+				'airmass_min':1.0   ,  'airmass_max':3.0,
 				'pwv_min':0.50 		,	'pwv_max':20.0,
-				'A_min':-500.0 		,	'A_max':500.0,
-				'B_min':-0.04  	    ,	'B_max':0.04,
-				'N_min':0.1     	,	'N_max':3.00,
-				'a1_1_min':-0.01    ,	'a1_1_max':0.01,    
-				'a1_0_min':0.0      ,	'a1_0_max':1.0 ,    
-				'k1_1_min':-0.01    ,	'k1_1_max':0.0 ,    
-				'k1_0_min':0.0      ,	'k1_0_max':2.20 ,    
-				'p1_min':-np.pi     ,	'p1_max':np.pi ,    
- 				'a2_1_min':0.0      ,	'a2_1_max':a2_1*1.1 ,    
-				'a2_0_min':-0.5     ,	'a2_0_max':0.010 ,    
-				'k2_2_min':0.0      ,	'k2_2_max':0.1 ,    
-				'k2_1_min':-0.1     ,	'k2_1_max':0.0 ,    
-				'k2_0_min':0.0      ,	'k2_0_max':0.90 ,
-				'p2_min':-np.pi     ,	'p2_max':np.pi ,
-				    }
+				'A_min':-500.0 		,  'A_max':500.0,
+				'B_min':-0.04  	    ,  'B_max':0.04,
+				'N_min':1.0  	    ,  'N_max':10.0    }
 
 	if  limits['lsf_min']     < lsf     < limits['lsf_max'] \
 	and limits['airmass_min'] < airmass < limits['airmass_max']\
 	and limits['pwv_min']     < pwv     < limits['pwv_max']\
 	and limits['A_min']       < A       < limits['A_max']\
 	and limits['B_min']       < B       < limits['B_max']\
-	and limits['N_min']       < N       < limits['N_max']\
-	and limits['a1_1_min']    < a1_1    < limits['a1_1_max']\
-	and limits['a1_0_min']    < a1_0    < limits['a1_0_max']\
-	and limits['k1_1_min']    < k1_1    < limits['k1_1_max']\
-	and limits['k1_0_min']    < k1_0    < limits['k1_0_max']\
-	and limits['p1_min']      < p1      < limits['p1_max']\
-	and limits['a2_1_min']    < a2_1    < limits['a2_1_max']\
-	and limits['a2_0_min']    < a2_0    < limits['a2_0_max']\
-	and limits['k2_2_min']    < k2_2    < limits['k2_2_max']\
-	and limits['k2_1_min']    < k2_1    < limits['k2_1_max']\
-	and limits['k2_0_min']    < k2_0    < limits['k2_0_max']\
-	and limits['p2_min']      < p2      < limits['p2_max']:
+	and limits['N_min']       < N       < limits['N_max']:
 		return 0.0
 
 	return -np.inf
@@ -389,45 +361,35 @@ pos = [np.array([priors['lsf_min']       + (priors['lsf_max']        - priors['l
 				 priors['pwv_min']       + (priors['pwv_max']        - priors['pwv_min'] )  * np.random.uniform(), 
 				 priors['A_min']         + (priors['A_max']          - priors['A_min'])     * np.random.uniform(),
 				 priors['B_min']         + (priors['B_max']          - priors['B_min'])     * np.random.uniform(),
-				 priors['N_min']         + (priors['N_max']          - priors['N_min'])     * np.random.uniform(),
-				 priors['a1_1_min']      + (priors['a1_1_max']       - priors['a1_1_min'])  * np.random.uniform(),
-				 priors['a1_0_min']      + (priors['a1_0_max']       - priors['a1_0_min'])  * np.random.uniform(),
-				 priors['k1_1_min']      + (priors['k1_1_max']       - priors['k1_1_min'])  * np.random.uniform(),
-				 priors['k1_0_min']      + (priors['k1_0_max']       - priors['k1_0_min'])  * np.random.uniform(),
-				 priors['p1_min']        + (priors['p1_max']         - priors['p1_min'])    * np.random.uniform(),
-				 priors['a2_1_min']      + (priors['a2_1_max']       - priors['a2_1_min'])  * np.random.uniform(),
-				 priors['a2_0_min']      + (priors['a2_0_max']       - priors['a2_0_min'])  * np.random.uniform(),
-				 priors['k2_2_min']      + (priors['k2_2_max']       - priors['k2_2_min'])  * np.random.uniform(),
-				 priors['k2_1_min']      + (priors['k2_1_max']       - priors['k2_1_min'])  * np.random.uniform(),
-				 priors['k2_0_min']      + (priors['k2_0_max']       - priors['k2_0_min'])  * np.random.uniform(),
-				 priors['p2_min']        + (priors['p2_max']         - priors['p2_min'])    * np.random.uniform()]) for i in range(nwalkers)]
+				 priors['N_min']         + (priors['N_max']          - priors['N_min'])     * np.random.uniform()]) for i in range(nwalkers)]
 
-with Pool() as pool:
-	sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data,), a=moves, pool=pool, moves=emcee.moves.KDEMove())
-	time1 = time.time()
-	sampler.run_mcmc(pos, step, progress=True)
-	time2 = time.time()
-	print('total time: ',(time2-time1)/60,' min.')
-	print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
-	print(sampler.acceptance_fraction)
-
-np.save(save_to_path + '/sampler_chain', sampler.chain[:, :, :])
+if True:
+	set_start_method('fork')
+	with Pool() as pool:
+		sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data,), a=moves, pool=pool, moves=emcee.moves.KDEMove())
+		time1 = time.time()
+		sampler.run_mcmc(pos, step, progress=True)
+		time2 = time.time()
+		print('total time: ',(time2-time1)/60,' min.')
+		print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
+		print(sampler.acceptance_fraction)
 	
-samples = sampler.chain[:, :, :].reshape((-1, ndim))
-
-np.save(save_to_path + '/samples', samples)
+	np.save(save_to_path + '/sampler_chain', sampler.chain[:, :, :])
+		
+	samples = sampler.chain[:, :, :].reshape((-1, ndim))
+	
+	np.save(save_to_path + '/samples', samples)
 
 # create walker plots
 sampler_chain = np.load(save_to_path + '/sampler_chain.npy')
 samples = np.load(save_to_path + '/samples.npy')
 
-ylabels = ["$\Delta \\nu_{inst}$ (km/s)", "airmass", "pwv (mm)", "$F_{\lambda}$ offset", "$\lambda$ offset ($\AA$)", "C$_\mathrm{noise}$",
-			"a1_1", "a1_0", "k1_1", "k1_0", "p1", "a2_1", "a2_0", "k2_2", "k2_1", "k2_0", "p2"]
+ylabels = ["$\Delta \\nu_{inst}$ (km/s)", "airmass", "pwv (mm)", "$F_{\lambda}$ offset", "$\lambda$ offset ($\AA$)", "$C_\mathrm{noise}$"]
 
 ## create walker plots
 plt.rc('font', family='sans-serif')
 plt.tick_params(labelsize=30)
-fig = plt.figure(tight_layout=True, figsize=(4, ndim))
+fig = plt.figure(tight_layout=True)
 gs = gridspec.GridSpec(ndim, 1)
 gs.update(hspace=0.1)
 
@@ -448,7 +410,7 @@ triangle_samples = sampler_chain[:, burn:, :].reshape((-1, ndim))
 #print(triangle_samples.shape)
 
 # create the final spectra comparison
-lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc, N_mcmc, a1_1_mcmc, a1_0_mcmc, k1_1_mcmc, k1_0_mcmc, p1_mcmc, a2_1_mcmc, a2_0_mcmc, k2_2_mcmc, k2_1_mcmc, k2_0_mcmc, p2_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), 
+lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc, N_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), 
 	zip(*np.percentile(triangle_samples, [16, 50, 84], axis=0)))
 
 # add the summary to the txt file
@@ -462,20 +424,16 @@ file_log.write("pwv_mcmc {} km/s\n".format(str(pwv_mcmc)))
 file_log.write("A_mcmc {}\n".format(str(A_mcmc)))
 file_log.write("B_mcmc {}\n".format(str(B_mcmc)))
 file_log.write("N_mcmc {}\n".format(str(N_mcmc)))
-file_log.write("a1_1_mcmc {}\n".format(str(a1_1_mcmc)))
-file_log.write("a1_0_mcmc {}\n".format(str(a1_0_mcmc)))
-file_log.write("k1_1_mcmc {}\n".format(str(k1_1_mcmc)))
-file_log.write("k1_0_mcmc {}\n".format(str(k1_0_mcmc)))
-file_log.write("p1_mcmc   {}\n".format(str(p1_mcmc)))
-file_log.write("a2_1_mcmc {}\n".format(str(a2_1_mcmc)))
-file_log.write("a2_0_mcmc {}\n".format(str(a2_0_mcmc)))
-file_log.write("k2_2_mcmc {}\n".format(str(k2_2_mcmc)))
-file_log.write("k2_1_mcmc {}\n".format(str(k2_1_mcmc)))
-file_log.write("k2_0_mcmc {}\n".format(str(k2_0_mcmc)))
-file_log.write("p2_mcmc   {}\n".format(str(p2_mcmc)))
 file_log.close()
 
-print(lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc, N_mcmc, a1_1_mcmc, a1_0_mcmc, k1_1_mcmc, k1_0_mcmc, p1_mcmc, a2_1_mcmc, a2_0_mcmc, k2_2_mcmc, k2_1_mcmc, k2_0_mcmc, p2_mcmc)
+print(lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc, N_mcmc)
+
+lsf = lsf_mcmc[0]
+airmass = airmass_mcmc[0]
+pwv = pwv_mcmc[0]
+A = A_mcmc[0]
+B = B_mcmc[0]
+N = N_mcmc[0]
 
 if '_' in tell_sp.name:
 	tell_data_name = tell_sp.name.split('_')[0]
@@ -489,18 +447,7 @@ fig = corner.corner(triangle_samples,
 	pwv_mcmc[0], 
 	A_mcmc[0],
 	B_mcmc[0],
-	N_mcmc[0],
-	a1_1_mcmc[0], 
-	a1_0_mcmc[0], 
-	k1_1_mcmc[0], 
-	k1_0_mcmc[0], 
-	p1_mcmc[0], 
-	a2_1_mcmc[0], 
-	a2_0_mcmc[0], 
-	k2_2_mcmc[0], 
-	k2_1_mcmc[0], 
-	k2_0_mcmc[0], 
-	p2_mcmc[0]],
+	N_mcmc[0]],
 	quantiles=[0.16, 0.84],
 	label_kwargs={"fontsize": 20})
 plt.minorticks_on()
@@ -513,22 +460,23 @@ data2.wave          = data2.wave + B_mcmc[0]
 telluric_model      = tellurics.convolveTelluric(lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], data)
 model, pcont        = smart.continuum(data=data, mdl=telluric_model, deg=2, tell=True)
 model.flux         += A_mcmc[0]
-N                   = N_mcmc[0]
 
-model_nofringe = tellurics.makeTelluricModel(lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], A_mcmc[0], B_mcmc[0], data=data, deg=2, niter=None)
-
-model = tellurics.makeTelluricModelFringeWaveDependent(lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], A_mcmc[0], B_mcmc[0], a1_1_mcmc[0], 
-					a1_0_mcmc[0], k1_1_mcmc[0], k1_0_mcmc[0], p1_mcmc[0], a2_1_mcmc[0], a2_0_mcmc[0], k2_2_mcmc[0], k2_1_mcmc[0], k2_0_mcmc[0], p2_mcmc[0], 
-					data=data, deg=2, niter=None)
+if include_fringe_model:
+	model_nofringe = model
+	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=None, include_fringe_model=include_fringe_model,
+		A1=A1, A2=A2, A3=A3, Dos1=Dos1, Dos2=Dos2, Dos3=Dos3, R1=R1, R2=R2, R3=R3, phi1=phi1, phi2=phi2, phi3=phi3)
+else:
+	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=None)
 
 plt.tick_params(labelsize=20)
 fig = plt.figure(figsize=(20,8))
 ax1 = fig.add_subplot(111)
-ax1.plot(model_nofringe.wave, model_nofringe.flux, c='m', ls='-', alpha=0.5)
 ax1.plot(model.wave, model.flux, c='C3', ls='-', alpha=0.5)
+if include_fringe_model:
+	ax1.plot(model_nofringe.wave, model_nofringe.flux, c='blue', ls='-', alpha=0.5)
 ax1.plot(model.wave, np.polyval(pcont, model.wave) + A_mcmc[0], c='C1', ls='-', alpha=0.5)
 ax1.plot(data.wave, data.flux, 'k-', alpha=0.5)
-ax1.plot(data.wave, data.flux - model.flux,'k-', alpha=0.5)
+ax1.plot(data.wave, data.flux-(model.flux+A_mcmc[0]),'k-', alpha=0.5)
 ax1.minorticks_on()
 plt.figtext(0.89,0.86,"{} O{}".format(tell_data_name, order),
 	color='k',
@@ -555,11 +503,11 @@ plt.figtext(0.89,0.80,r"$\chi^2$ = {}, DOF = {}".format(\
 	horizontalalignment='right',
 	verticalalignment='center',
 	fontsize=12)
-plt.fill_between(data.wave, -data.noise*N, data.noise*N, alpha=0.5)
+plt.fill_between(data.wave, -data.noise, data.noise, color='k', alpha=0.5)
+plt.fill_between(data.wave, -N*data.noise, N*data.noise, color='b', alpha=0.5)
 plt.tick_params(labelsize=15)
 plt.ylabel('Flux (counts/s)',fontsize=15)
 plt.xlabel('Wavelength ($\AA$)',fontsize=15)
-plt.xlim(data.wave[0], data.wave[-1])
 
 ax2 = ax1.twiny()
 ax2.plot(pixel, data.flux, color='w', alpha=0)
@@ -572,7 +520,6 @@ plt.savefig(save_to_path+'/telluric_spectrum.png',dpi=300, bbox_inches='tight')
 #plt.show()
 plt.close()
 
-"""
 # excel summary file
 #cat = pd.DataFrame(columns=[	'date_obs', 'tell_name', 'tell_path', 'snr_tell', 'tell_mask', 'order',
 #								'mjd_tell', 'ndim_tell', 'nwalker_tell', 'step_tell', 'burn_tell', 
@@ -584,7 +531,7 @@ plt.close()
 
 snr_tell = np.nanmedian(tell_sp.flux/tell_sp.noise)
 
-cat = pd.DataFrame(({'date_obs':date_obs, 'tell_name':tell_data_name, 'tell_path':tell_path, 'snr_tell':snr_tell,
+cat = pd.DataFrame({'date_obs':date_obs, 'tell_name':tell_data_name, 'tell_path':tell_path, 'snr_tell':snr_tell,
 					'tell_mask':str(custom_mask), 'order':order, 'mjd_tell':mjd, 
 					'ndim_tell':ndim, 'nwalker_tell':nwalkers, 'step_tell':step, 'burn_tell':burn,
 					'pixel_start_tell':pixel_start, 'pixel_end_tell':pixel_end,
@@ -592,10 +539,10 @@ cat = pd.DataFrame(({'date_obs':date_obs, 'tell_name':tell_data_name, 'tell_path
 					'am_tell':airmass_mcmc[0], 'am_tell_ue':airmass_mcmc[1], 'am_tell_le':airmass_mcmc[2], 
 					'pwv_tell':pwv_mcmc[0], 'pwv_tell_ue':pwv_mcmc[1], 'pwv_tell_le':pwv_mcmc[2],
 					'A_tell':A_mcmc[0], 'A_tell_ue':A_mcmc[1], 'A_tell_le':A_mcmc[2], 
-					'B_tell':B_mcmc[0], 'B_tell_ue':B_mcmc[1], 'B_tell_le':B_mcmc[2]}, index=[0])
+					'B_tell':B_mcmc[0], 'B_tell_ue':B_mcmc[1], 'B_tell_le':B_mcmc[2],
+					'N_tell':N_mcmc[0], 'N_tell_ue':N_mcmc[1], 'N_tell_le':N_mcmc[2]}, index=[0])
 
 cat.to_excel(save_to_path + '/mcmc_summary.xlsx', index=False)
-
 
 # save the best fit parameters in the fits header
 if save is True:
@@ -608,4 +555,3 @@ if save is True:
 			hdulist.writeto(data_path, overwrite=True)
 		except FileNotFoundError:
 			hdulist.writeto(data_path)
-"""

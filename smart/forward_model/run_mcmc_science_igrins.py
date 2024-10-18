@@ -131,13 +131,13 @@ burn                   = int(args.burn)
 moves                  = float(args.moves)
 applymask              = args.applymask
 pixel_start, pixel_end = int(args.pixel_start), int(args.pixel_end)
+
 #pwv                    = float(args.pwv)
 #alpha_tell             = float(args.alpha_tell[0])
 plot_show              = args.plot_show
 coadd                  = args.coadd
 outlier_rejection      = float(args.outlier_rejection)
 modelset               = str(args.modelset)
-instrument             = str(args.instrument)
 final_mcmc             = args.final_mcmc
 include_fringe_model   = args.include_fringe_model
 
@@ -154,21 +154,23 @@ now       = datetime.now()
 dt_string = now.strftime("%H:%M:%S")	
 
 #####################################
-if instrument == 'igrins':
+if instrument.lower() == 'igrins':
 	tell_data_name2 = tell_data_name + '_calibrated'
-	data        = smart.Spectrum(name=sci_data_name, name2=tell_data_name2, order=order, path=data_path, applymask=applymask, instrument=instrument)
-	tell_sp     = smart.Spectrum(name=tell_data_name, name2=tell_data_name2, order=data.order, path=tell_path, applymask=applymask, instrument=instrument, flat_tell=True)
+	data        = smart.Spectrum(name=sci_data_name, name2=tell_data_name2, order=order, path=data_path, tell_path=tell_path, applymask=applymask, instrument=instrument, spec_a0v=True)
+	#tell_sp     = smart.Spectrum(name=tell_data_name2, name2=tell_data_name2, order=data.order, path=tell_path, tell_path=tell_path, applymask=applymask, instrument=instrument, flat_tell=True)
+	tell_sp     = smart.Spectrum(name=tell_data_name2, name2=tell_data_name2, order=data.order, tell_path=tell_path, applymask=applymask, instrument=instrument, flat_tell=True, wavecal=True)
 
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
 	data        = smart.Spectrum(name=sci_data_name, order=order, path=data_path, applymask=applymask, instrument=instrument)
 	tell_data_name2 = tell_data_name + '_calibrated'
 	tell_sp     = smart.Spectrum(name=tell_data_name2, order=data.order, path=tell_path, applymask=applymask, instrument=instrument)
 
 	data.updateWaveSol(tell_sp)
 
+
 # MJD for logging
 # upgraded NIRSPEC
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
 	if len(data.oriWave) == 2048:
 		mjd = data.header['MJD']
 	# old NIRSPEC
@@ -178,7 +180,7 @@ if instrument == 'nirspec':
 elif instrument == 'hires':
 	mjd = data.header['MJD']
 
-elif instrument == 'igrins':
+elif instrument.lower() == 'igrins':
 	mjd = data.header['MJD-OBS']
 
 if coadd:
@@ -209,7 +211,7 @@ if coadd:
 
 sci_data  = data
 
-if instrument in ['nirspec', 'igrins']:
+if instrument.lower() in ['nirspec', 'igrins']:
 	tell_data = tell_sp 
 
 """
@@ -276,7 +278,7 @@ else:
 
 data          = copy.deepcopy(sci_data)
 
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
 	tell_sp       = copy.deepcopy(tell_data)
 	data.updateWaveSol(tell_sp)
 
@@ -286,37 +288,37 @@ if instrument == 'nirspec':
 
 ## read the input custom mask and priors
 lines          = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
 	custom_mask    = json.loads(lines[5].split('custom_mask')[1])
 	priors         = ast.literal_eval(lines[6].split('priors ')[1])
 	barycorr       = json.loads(lines[13].split('barycorr')[1])
-elif instrument == 'hires':
+elif instrument.lower() == 'hires':
 	custom_mask    = json.loads(lines[3].split('custom_mask')[1])
 	priors         = ast.literal_eval(lines[4].split('priors ')[1])
 	barycorr       = json.loads(lines[11].split('barycorr')[1])
-elif instrument == 'igrins':
+elif instrument.lower() == 'igrins':
 	custom_mask    = json.loads(lines[5].split('custom_mask')[1])
 	print('custom_mask', custom_mask)
 	priors         = ast.literal_eval(lines[6].split('priors ')[1])
 	barycorr       = json.loads(lines[13].split('barycorr')[1])
 
 # no logg 5.5 for teff lower than 900
-if modelset == 'btsettl08' and priors['teff_min'] < 900: logg_max = 5.0
+if 'btsettl08' in modelset.lower() and priors['teff_min'] < 900: logg_max = 5.0
 else: logg_max = 5.5
 
 # limit of the flux nuisance parameter: 5 percent of the median flux
 A_const       = 0.05 * abs(np.median(data.flux))
 
-if modelset == 'btsettl08' or modelset == 'phoenix-btsettl08':
+if 'btsettl08' in modelset.lower():
 	limits         = { 
 						'teff_min':max(priors['teff_min']-300,500), 'teff_max':min(priors['teff_max']+300,3500),
 						'logg_min':3.5,                             'logg_max':logg_max,
-						'vsini_min':0.0,                            'vsini_max':100.0,
+						'vsini_min':0.0,                            'vsini_max':200.0,
 						'rv_min':-200.0,                            'rv_max':200.0,
 						'am_min':1.0,                               'am_max':3.0,
 						'pwv_min':0.5,                            	'pwv_max':20.0,
-						'A_min':-A_const,							'A_max':A_const,
-						'B_min':-0.6,                              	'B_max':0.6,
+						'A_min':-1000,								'A_max':1000,
+						'B_min':-5,                              	'B_max':5,
 						'N_min':0.10,                               'N_max':5.0 				
 					}
 
@@ -360,7 +362,7 @@ elif modelset.upper() == 'PHOENIX_BTSETTL_CIFIST2011_2015':
 					}
 
 # HIRES wavelength calibration is not that precise, release the constraint for the wavelength offset nuisance parameter
-if data.instrument == 'hires':
+if data.instrument.lower() == 'hires':
 	limits['B_min'] = -3.0 # Angstrom
 	limits['B_max'] = +3.0 # Angstrom
 
@@ -381,7 +383,7 @@ data.wave     = data.wave[pixel_start:pixel_end]
 data.flux     = data.flux[pixel_start:pixel_end]
 data.noise    = data.noise[pixel_start:pixel_end]
 
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
 	tell_sp.wave  = tell_sp.wave[pixel_start:pixel_end]
 	tell_sp.flux  = tell_sp.flux[pixel_start:pixel_end]
 	tell_sp.noise = tell_sp.noise[pixel_start:pixel_end]
@@ -392,6 +394,7 @@ if instrument == 'nirspec':
 #	priors, limits         = mcmc_utils.generate_initial_priors_and_limits(sp_type=sp_type)
 #print(priors, limits)
 
+print("LSF: ", lsf)
 if lsf is None:
 	lsf           = smart.getLSF(tell_sp, alpha=alpha_tell, test=True, save_path=save_to_path)
 #	print("LSF: ", lsf)
@@ -449,10 +452,17 @@ def lnlike(theta, data, lsf):
 
 	model = model_fit.makeModel(teff=teff, logg=logg, metal=0.0, vsini=vsini, rv=rv, tell_alpha=1.0, wave_offset=B, flux_offset=A,
 		lsf=lsf, order=str(data.order), data=data, modelset=modelset, airmass=am, pwv=pwv, include_fringe_model=include_fringe_model, instrument=instrument)
-
+	'''
+	plt.figure(111111)
+	plt.plot(data.wave, data.flux, label='data')
+	plt.plot(model.wave, model.flux, label='model')
+	plt.plot(data.wave, data.noise, label='noise')
+	plt.legend()
+	plt.show()
+	'''
 	chisquare = smart.chisquare(data, model)/N**2
 
-	return -0.5 * (chisquare + np.sum(np.log(2*np.pi*(data.noise*N)**2)))
+	return -0.5 * (chisquare + np.nansum(np.log(2*np.pi*(data.noise*N)**2)))
 
 def lnprior(theta, limits=limits):
 	"""
@@ -475,7 +485,7 @@ def lnprior(theta, limits=limits):
 	return -np.inf
 
 def lnprob(theta, data, lsf):
-		
+
 	lnp = lnprior(theta)
 
 	if not np.isfinite(lnp):
@@ -494,7 +504,6 @@ pos = [np.array([	priors['teff_min']  + (priors['teff_max']   - priors['teff_min
 					priors['N_min']     + (priors['N_max']      - priors['N_min'])     * np.random.uniform()]) for i in range(nwalkers)]
 
 ## multiprocessing
-
 set_start_method('fork')
 with Pool() as pool:
 	#sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data, lsf, pwv), a=moves, pool=pool)
@@ -730,7 +739,7 @@ file_log.close()
 #
 
 med_snr      = np.nanmedian(data.flux/data.noise)
-if instrument in ['nirspec', 'igrins']:
+if instrument.lower() in ['nirspec', 'igrins']:
 	wave_cal_err = tell_sp.header['STD']
 else:
 	wave_cal_err = np.nan

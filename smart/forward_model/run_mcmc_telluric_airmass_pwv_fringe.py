@@ -9,8 +9,7 @@ from astropy.io import fits
 import emcee
 import tellurics
 import smart
-import fringe_model
-from multiprocessing import Pool
+from multiprocessing import Pool, set_start_method
 import corner
 import os
 import sys
@@ -20,6 +19,8 @@ import json
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
+
+
 
 parser = argparse.ArgumentParser(description="Run the forward-modeling routine for telluric files",\
 	usage="run_mcmc_telluric.py order date_obs tell_data_name tell_path save_to_path")
@@ -39,8 +40,8 @@ parser.add_argument("tell_path",type=str,
 parser.add_argument("save_to_path",type=str,
     default=None, help="output path", nargs="+")
 
-#parser.add_argument("-ndim",type=int,
-#    default=5, help="number of dimension; default 17")
+parser.add_argument("-ndim",type=int,
+    default=5, help="number of dimension; default 6")
 
 parser.add_argument("-nwalkers",type=int,
     default=50, help="number of walkers of MCMC; default 50")
@@ -79,8 +80,7 @@ date_obs               = str(args.date_obs[0])
 tell_data_name         = str(args.tell_data_name[0])
 tell_path              = str(args.tell_path[0])
 save_to_path           = str(args.save_to_path[0])
-#ndim, nwalkers, step   = int(args.ndim), int(args.nwalkers), int(args.step)
-nwalkers, step         = int(args.nwalkers), int(args.step)
+ndim, nwalkers, step   = int(args.ndim), int(args.nwalkers), int(args.step)
 burn                   = int(args.burn)
 moves                  = float(args.moves)
 priors                 = args.priors
@@ -88,9 +88,8 @@ applymask              = args.applymask
 pixel_start, pixel_end = int(args.pixel_start), int(args.pixel_end)
 save                   = args.save
 
-#lines                  = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
-#custom_mask            = json.loads(lines[3].split('custom_mask')[1])
-custom_mask = [] # test
+lines                  = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
+custom_mask            = json.loads(lines[3].split('custom_mask')[1])
 
 if order == 35: applymask = True
 
@@ -139,7 +138,7 @@ save_to_path: 	str
 tell_data_name       = tell_sp.name
 tell_path            = tell_sp.path
 order                = tell_sp.order
-ndim                 = 5
+ndim                 = 6
 #applymask            = False
 #pixel_start          = 10
 #pixel_end            = -30
@@ -152,11 +151,6 @@ tell_sp.mask_custom(custom_mask=custom_mask)
 length1     = len(tell_sp.oriWave)
 pixel       = np.delete(np.arange(length1),tell_sp.mask)
 pixel       = pixel[pixel_start:pixel_end]
-
-piecewise_fringe_model = [0, 200, -100, -1]
-#a1_1, k1_1, p1_1, a2_1, k2_1, p2_1 = 0.0174107, 2.10231814, -3.14150313, 0.00484561, 0.86503406, 3.14156183
-#a1_2, k1_2, p1_2, a2_2, k2_2, p2_2 = 0.0144445, 2.0740762, -0.00275613, 0.00224659, 0.84935461, -0.00915833
-#a1_3, k1_3, p1_3, a2_3, k2_3, p2_3 = 0.01452451, 2.07021129, 0.82740255, 0.00826017, 0.82431895, -3.14154979
 
 if save_to_path is None:
 	save_to_path = './mcmc'
@@ -201,19 +195,14 @@ if priors is None:
 	#pwv_min_index = np.where(pwv_chi2_array == np.min(pwv_chi2_array))[0][0]
 	#pwv_0         = pwv_list[pwv_min_index]
 
-	priors      =	{	'lsf_min':4.9  		,  'lsf_max':5.1,
-						'airmass_min':1.00  ,  'airmass_max':1.05,		
-						'pwv_min':1.45      ,  'pwv_max':1.55,
-						'A_min':-0.03 		,  'A_max':0.03,
-						'B_min':0.01    	,  'B_max':0.02   
+	priors      =	{	'lsf_min':3.0  		,  'lsf_max':8.0,
+						'airmass_min':1.0   ,  'airmass_max':3.0,		
+						'pwv_min':0.5       ,	'pwv_max':20.0,
+						'A_min':-0.1 		,  'A_max':0.1,
+						'B_min':-0.04  	    ,  'B_max':0.04,
+						'N_min':1.00 	    ,  'N_max':100.0        
 					}
 
-	#priors      =	{	'lsf_min':4.0  		,  'lsf_max':5.5,
-	#					'airmass_min':1.00  ,  'airmass_max':1.50,		
-	#					'pwv_min':0.5       ,  'pwv_max':5.0,
-	#					'A_min':-1.0 		,  'A_max':1.0,
-	#					'B_min':-0.02  		,  'B_max':0.02   
-	#				}
 
 tell_sp.wave    = tell_sp.wave[pixel_start:pixel_end]
 tell_sp.flux    = tell_sp.flux[pixel_start:pixel_end]
@@ -298,39 +287,35 @@ def lnlike(theta, data=data):
 	"""
 	## Parameters MCMC
 
-	lsf, airmass, pwv, A, B  = theta
+	lsf, airmass, pwv, A, B, N = theta
 
-	#model = tellurics.makeTelluricModelFringe(	lsf, airmass, pwv, A, B, 
-	#											a1_1, k1_1, p1_1, a2_1, k2_1, p2_1, 
-	#											a1_2, k1_2, p1_2, a2_2, k2_2, p2_2, 
-	#											a1_3, k1_3, p1_3, a2_3, k2_3, p2_3,
-	#											data=data, deg=2, niter=None)
+	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=None)
 
-	model = fringe_model.double_sine_fringe_telluric( lsf, airmass, pwv, A, B, data=data, deg=2, niter=None, 
-		piecewise_fringe_model=piecewise_fringe_model, verbose=False)
+	chisquare = smart.chisquare(data, model)/N**2
 
-	chisquare = smart.chisquare(data, model)
-
-	return -0.5 * (chisquare + np.sum(np.log(2*np.pi*data.noise**2)))
+	return -0.5 * (chisquare + np.sum(np.log(2*np.pi*(data.noise*N)**2)))
 
 def lnprior(theta):
 	"""
 	Specifies a flat prior
 	"""
 	## Parameters for theta
-	lsf, airmass, pwv, A, B = theta
+	#lsf, airmass, pwv, alpha, A, B = theta
+	lsf, airmass, pwv, A, B, N = theta
 
 	limits =  { 'lsf_min':2.0  		,  'lsf_max':10.0,
 				'airmass_min':1.0   ,  'airmass_max':3.0,
 				'pwv_min':0.50 		,	'pwv_max':20.0,
 				'A_min':-500.0 		,  'A_max':500.0,
-				'B_min':-0.04  	    ,  'B_max':0.04    }
+				'B_min':-0.04  	    ,  'B_max':0.04,
+				'N_min':1.0  	    ,  'N_max':100.0    }
 
 	if  limits['lsf_min']     < lsf     < limits['lsf_max'] \
 	and limits['airmass_min'] < airmass < limits['airmass_max']\
 	and limits['pwv_min']     < pwv     < limits['pwv_max']\
 	and limits['A_min']       < A       < limits['A_max']\
-	and limits['B_min']       < B       < limits['B_max']:
+	and limits['B_min']       < B       < limits['B_max']\
+	and limits['N_min']       < N       < limits['N_max']:
 		return 0.0
 
 	return -np.inf
@@ -346,8 +331,10 @@ pos = [np.array([priors['lsf_min']       + (priors['lsf_max']        - priors['l
 				 priors['airmass_min']   + (priors['airmass_max']    - priors['airmass_min'] )  * np.random.uniform(), 
 				 priors['pwv_min']       + (priors['pwv_max']        - priors['pwv_min'] )  * np.random.uniform(), 
 				 priors['A_min']         + (priors['A_max']          - priors['A_min'])     * np.random.uniform(),
-				 priors['B_min']         + (priors['B_max']          - priors['B_min'])     * np.random.uniform()]) for i in range(nwalkers)]
+				 priors['B_min']         + (priors['B_max']          - priors['B_min'])     * np.random.uniform(),
+				 priors['N_min']         + (priors['N_max']          - priors['N_min'])     * np.random.uniform()]) for i in range(nwalkers)]
 
+set_start_method('fork')
 with Pool() as pool:
 	sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data,), a=moves, pool=pool, moves=emcee.moves.KDEMove())
 	time1 = time.time()
@@ -367,12 +354,12 @@ np.save(save_to_path + '/samples', samples)
 sampler_chain = np.load(save_to_path + '/sampler_chain.npy')
 samples = np.load(save_to_path + '/samples.npy')
 
-ylabels = ["$\Delta \\nu_{inst}$ (km/s)", "airmass", "pwv (mm)", "$F_{\lambda}$ offset", "$\lambda$ offset ($\AA$)"]
+ylabels = ["$\Delta \\nu_{inst}$ (km/s)", "airmass", "pwv (mm)", "$F_{\lambda}$ offset", "$\lambda$ offset ($\AA$)", "$C_\mathrm{noise}$"]
 
 ## create walker plots
 plt.rc('font', family='sans-serif')
 plt.tick_params(labelsize=30)
-fig = plt.figure(tight_layout=True, figsize=(4, ndim))
+fig = plt.figure(tight_layout=True)
 gs = gridspec.GridSpec(ndim, 1)
 gs.update(hspace=0.1)
 
@@ -393,7 +380,7 @@ triangle_samples = sampler_chain[:, burn:, :].reshape((-1, ndim))
 #print(triangle_samples.shape)
 
 # create the final spectra comparison
-lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), 
+lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc, N_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), 
 	zip(*np.percentile(triangle_samples, [16, 50, 84], axis=0)))
 
 # add the summary to the txt file
@@ -406,9 +393,10 @@ file_log.write("airmass_mcmc {} km/s\n".format(str(airmass_mcmc)))
 file_log.write("pwv_mcmc {} km/s\n".format(str(pwv_mcmc)))
 file_log.write("A_mcmc {}\n".format(str(A_mcmc)))
 file_log.write("B_mcmc {}\n".format(str(B_mcmc)))
+file_log.write("N_mcmc {}\n".format(str(N_mcmc)))
 file_log.close()
 
-print(lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc)
+print(lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc, N_mcmc)
 
 if '_' in tell_sp.name:
 	tell_data_name = tell_sp.name.split('_')[0]
@@ -421,7 +409,8 @@ fig = corner.corner(triangle_samples,
 	airmass_mcmc[0],
 	pwv_mcmc[0], 
 	A_mcmc[0],
-	B_mcmc[0]],
+	B_mcmc[0],
+	N_mcmc[0]],
 	quantiles=[0.16, 0.84],
 	label_kwargs={"fontsize": 20})
 plt.minorticks_on()
@@ -435,25 +424,15 @@ telluric_model      = tellurics.convolveTelluric(lsf_mcmc[0], airmass_mcmc[0], p
 model, pcont        = smart.continuum(data=data, mdl=telluric_model, deg=2, tell=True)
 model.flux         += A_mcmc[0]
 
-model_nofringe = tellurics.makeTelluricModel(lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], A_mcmc[0], B_mcmc[0], data=data, deg=2, niter=None)
-
-model = fringe_model.double_sine_fringe_telluric( lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], A_mcmc[0], B_mcmc[0], data=data, deg=2, niter=None, 
-	piecewise_fringe_model=piecewise_fringe_model, verbose=False)
-
-#model = tellurics.makeTelluricModelFringe(	lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], A_mcmc[0], B_mcmc[0], 
-#											a1_1, k1_1, p1_1, a2_1, k2_1, p2_1, 
-#											a1_2, k1_2, p1_2, a2_2, k2_2, p2_2, 
-#											a1_3, k1_3, p1_3, a2_3, k2_3, p2_3,
-#											data=data, deg=2, niter=None)
+data2.noise        *= N_mcmc[0]
 
 plt.tick_params(labelsize=20)
 fig = plt.figure(figsize=(20,8))
 ax1 = fig.add_subplot(111)
-ax1.plot(model_nofringe.wave, model_nofringe.flux, c='m', ls='-', alpha=0.5)
 ax1.plot(model.wave, model.flux, c='C3', ls='-', alpha=0.5)
 ax1.plot(model.wave, np.polyval(pcont, model.wave) + A_mcmc[0], c='C1', ls='-', alpha=0.5)
 ax1.plot(data.wave, data.flux, 'k-', alpha=0.5)
-ax1.plot(data.wave, data.flux - model.flux,'k-', alpha=0.5)
+ax1.plot(data.wave, data.flux-(model.flux+A_mcmc[0]),'k-', alpha=0.5)
 ax1.minorticks_on()
 plt.figtext(0.89,0.86,"{} O{}".format(tell_data_name, order),
 	color='k',
@@ -484,7 +463,6 @@ plt.fill_between(data.wave, -data.noise, data.noise, alpha=0.5)
 plt.tick_params(labelsize=15)
 plt.ylabel('Flux (counts/s)',fontsize=15)
 plt.xlabel('Wavelength ($\AA$)',fontsize=15)
-plt.xlim(data.wave[0], data.wave[-1])
 
 ax2 = ax1.twiny()
 ax2.plot(pixel, data.flux, color='w', alpha=0)
@@ -497,7 +475,6 @@ plt.savefig(save_to_path+'/telluric_spectrum.png',dpi=300, bbox_inches='tight')
 #plt.show()
 plt.close()
 
-"""
 # excel summary file
 #cat = pd.DataFrame(columns=[	'date_obs', 'tell_name', 'tell_path', 'snr_tell', 'tell_mask', 'order',
 #								'mjd_tell', 'ndim_tell', 'nwalker_tell', 'step_tell', 'burn_tell', 
@@ -521,7 +498,6 @@ cat = pd.DataFrame({'date_obs':date_obs, 'tell_name':tell_data_name, 'tell_path'
 
 cat.to_excel(save_to_path + '/mcmc_summary.xlsx', index=False)
 
-
 # save the best fit parameters in the fits header
 if save is True:
 	data_path = tell_sp.path + '/' + tell_sp.name + '_' + str(tell_sp.order) + '_all.fits'
@@ -533,4 +509,3 @@ if save is True:
 			hdulist.writeto(data_path, overwrite=True)
 		except FileNotFoundError:
 			hdulist.writeto(data_path)
-"""

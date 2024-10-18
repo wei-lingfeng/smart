@@ -16,6 +16,7 @@ import sys
 import time
 import copy
 import json
+import ast
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
@@ -70,6 +71,10 @@ parser.add_argument("-applymask",type=bool,
 parser.add_argument("-save",type=bool,
     default=True, help="save the fitted LSF and telluric alpha to the fits file header; default is True")
 
+parser.add_argument("-include_fringe_model", action='store_true', help="model the fringe pattern; default False")
+
+parser.add_argument("-niter",type=int, default=5, help="continuum function interation; default 5")
+
 args = parser.parse_args()
 
 ######################################################################################################
@@ -87,6 +92,8 @@ priors                 = args.priors
 applymask              = args.applymask
 pixel_start, pixel_end = int(args.pixel_start), int(args.pixel_end)
 save                   = args.save
+include_fringe_model   = args.include_fringe_model
+niter                  = int(args.niter)
 
 lines                  = open(save_to_path+'/mcmc_parameters.txt').read().splitlines()
 custom_mask            = json.loads(lines[3].split('custom_mask')[1])
@@ -103,6 +110,27 @@ if len(tell_sp.oriWave) == 2048:
 # old NIRSPEC
 else:
 	mjd = tell_sp.header['MJD-OBS']
+
+# read the pre-determined fringe parameters
+if include_fringe_model:
+	fringe_param   = ast.literal_eval(lines[4].split('fringe ')[1])
+
+	A1=float(fringe_param['A1']) 
+	A2=float(fringe_param['A2']) 
+	A3=float(fringe_param['A3']) 
+	Dos1=float(fringe_param['Dos1']) 
+	Dos2=float(fringe_param['Dos2']) 
+	Dos3=float(fringe_param['Dos3']) 
+	R1=float(fringe_param['R1'])
+	R2=float(fringe_param['R2'])
+	R3=float(fringe_param['R3'])
+	phi1=float(fringe_param['phi1'])
+	phi2=float(fringe_param['phi2']) 
+	phi3=float(fringe_param['phi3'])
+
+	print(A1, Dos1, R1, phi1)
+	print(A2, Dos2, R2, phi2)
+	print(A3, Dos3, R3, phi3)
 
 ###########################################################################################################
 """
@@ -288,7 +316,11 @@ def lnlike(theta, data=data):
 
 	lsf, airmass, pwv, A, B = theta
 
-	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=None)
+	if include_fringe_model:
+		model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=niter, include_fringe_model=include_fringe_model,
+			A1=A1, A2=A2, A3=A3, Dos1=Dos1, Dos2=Dos2, Dos3=Dos3, R1=R1, R2=R2, R3=R3, phi1=phi1, phi2=phi2, phi3=phi3)
+	else:
+		model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=2, niter=niter)
 
 	chisquare = smart.chisquare(data, model)
 
@@ -330,21 +362,22 @@ pos = [np.array([priors['lsf_min']       + (priors['lsf_max']        - priors['l
 				 priors['A_min']         + (priors['A_max']          - priors['A_min'])     * np.random.uniform(),
 				 priors['B_min']         + (priors['B_max']          - priors['B_min'])     * np.random.uniform()]) for i in range(nwalkers)]
 
-set_start_method('fork')
-with Pool() as pool:
-	sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data,), a=moves, pool=pool, moves=emcee.moves.KDEMove())
-	time1 = time.time()
-	sampler.run_mcmc(pos, step, progress=True)
-	time2 = time.time()
-	print('total time: ',(time2-time1)/60,' min.')
-	print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
-	print(sampler.acceptance_fraction)
-
-np.save(save_to_path + '/sampler_chain', sampler.chain[:, :, :])
+if True:
+	set_start_method('fork')
+	with Pool() as pool:
+		sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(data,), a=moves, pool=pool, moves=emcee.moves.KDEMove())
+		time1 = time.time()
+		sampler.run_mcmc(pos, step, progress=True)
+		time2 = time.time()
+		print('total time: ',(time2-time1)/60,' min.')
+		print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
+		print(sampler.acceptance_fraction)
 	
-samples = sampler.chain[:, :, :].reshape((-1, ndim))
-
-np.save(save_to_path + '/samples', samples)
+	np.save(save_to_path + '/sampler_chain', sampler.chain[:, :, :])
+		
+	samples = sampler.chain[:, :, :].reshape((-1, ndim))
+	
+	np.save(save_to_path + '/samples', samples)
 
 # create walker plots
 sampler_chain = np.load(save_to_path + '/sampler_chain.npy')
@@ -393,6 +426,12 @@ file_log.close()
 
 print(lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc)
 
+lsf = lsf_mcmc[0]
+airmass = airmass_mcmc[0]
+pwv = pwv_mcmc[0]
+A = A_mcmc[0]
+B = B_mcmc[0]
+
 if '_' in tell_sp.name:
 	tell_data_name = tell_sp.name.split('_')[0]
 
@@ -416,15 +455,36 @@ data2               = copy.deepcopy(data)
 data2.wave          = data2.wave + B_mcmc[0]
 telluric_model      = tellurics.convolveTelluric(lsf_mcmc[0], airmass_mcmc[0], pwv_mcmc[0], data)
 model, pcont        = smart.continuum(data=data, mdl=telluric_model, deg=2, tell=True)
+plot_cont           = np.polyval(pcont, model.wave)
+if niter is not None:
+	for i in range(niter):
+		model, pcont2 = smart.continuum(data=data2, mdl=model, deg=2, tell=True)
+		plot_cont *= np.polyval(pcont2, model.wave)
 model.flux         += A_mcmc[0]
+
+lsf = lsf_mcmc[0]
+airmass = airmass_mcmc[0]
+pwv = pwv_mcmc[0]
+A = A_mcmc[0]
+B = B_mcmc[0]
+
+if include_fringe_model:
+	model_nofringe = model
+	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data2, deg=2, niter=niter, include_fringe_model=include_fringe_model,
+		A1=A1, A2=A2, A3=A3, Dos1=Dos1, Dos2=Dos2, Dos3=Dos3, R1=R1, R2=R2, R3=R3, phi1=phi1, phi2=phi2, phi3=phi3)
+else:
+	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data2, deg=2, niter=niter)
 
 plt.tick_params(labelsize=20)
 fig = plt.figure(figsize=(20,8))
 ax1 = fig.add_subplot(111)
 ax1.plot(model.wave, model.flux, c='C3', ls='-', alpha=0.5)
-ax1.plot(model.wave, np.polyval(pcont, model.wave) + A_mcmc[0], c='C1', ls='-', alpha=0.5)
-ax1.plot(data.wave, data.flux, 'k-', alpha=0.5)
-ax1.plot(data.wave, data.flux-(model.flux+A_mcmc[0]),'k-', alpha=0.5)
+if include_fringe_model:
+	ax1.plot(model_nofringe.wave, model_nofringe.flux, c='C0', ls='-', alpha=0.5)
+#ax1.plot(model.wave, np.polyval(pcont, model.wave) + A_mcmc[0], c='C1', ls='-', alpha=0.5)
+ax1.plot(model.wave, plot_cont + A_mcmc[0], c='C1', ls='-', alpha=0.5)
+ax1.plot(data2.wave, data2.flux, 'k-', alpha=0.5)
+ax1.plot(data2.wave, data2.flux-model.flux,'k-', alpha=0.5)
 ax1.minorticks_on()
 plt.figtext(0.89,0.86,"{} O{}".format(tell_data_name, order),
 	color='k',
@@ -451,13 +511,13 @@ plt.figtext(0.89,0.80,r"$\chi^2$ = {}, DOF = {}".format(\
 	horizontalalignment='right',
 	verticalalignment='center',
 	fontsize=12)
-plt.fill_between(data.wave, -data.noise, data.noise, alpha=0.5)
+plt.fill_between(data2.wave, -data2.noise, data2.noise, color='C0', alpha=0.5)
 plt.tick_params(labelsize=15)
 plt.ylabel('Flux (counts/s)',fontsize=15)
 plt.xlabel('Wavelength ($\AA$)',fontsize=15)
 
 ax2 = ax1.twiny()
-ax2.plot(pixel, data.flux, color='w', alpha=0)
+ax2.plot(pixel, data2.flux, color='w', alpha=0)
 ax2.set_xlabel('Pixel',fontsize=15)
 ax2.tick_params(labelsize=15)
 ax2.set_xlim(pixel[0], pixel[-1])

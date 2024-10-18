@@ -98,29 +98,32 @@ instrument             = str(args.instrument)
 
 if order == 35: applymask = True
 
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
+	
 	tell_data_name2 = tell_data_name + '_calibrated'
 	tell_sp         = smart.Spectrum(name=tell_data_name2, order=order, path=tell_path, applymask=applymask)
-elif instrument == 'igrins':
+
+elif instrument.lower() == 'igrins':
+	
 	# model the unflatted spectrum
 	tell_sp = smart.Spectrum(name=tell_data_name, name2=tell_data_name+'_calibrated', 
-		order=order, path=tell_path, flat_tell=True, instrument=instrument)
-
+		order=order, path=tell_path, tell_path=tell_path, flat_tell=True, instrument=instrument, wavecal=True)
+	
 	tell_sp2 = smart.Spectrum(name=tell_data_name, name2=tell_data_name+'_calibrated', 
-		order=order, path=tell_path, flat_tell=False, instrument=instrument)
+		order=order, path=tell_path, tell_path=tell_path, flat_tell=True, instrument=instrument, wavecal=True, scale=True)
 
 	scales = tell_sp.flux/tell_sp2.flux
 	tell_sp.noise *= scales
 
 # MJD for logging
 # upgraded NIRSPEC
-if instrument == 'nirspec':
+if instrument.lower() == 'nirspec':
 	if len(tell_sp.oriWave) == 2048:
 		mjd = tell_sp.header['MJD']
 	# old NIRSPEC
 	else:
 		mjd = tell_sp.header['MJD-OBS']
-elif instrument == 'igrins':
+elif instrument.lower() == 'igrins':
 	mjd = tell_sp.header['MJD-OBS']
 
 ###########################################################################################################
@@ -214,11 +217,11 @@ if priors is None:
 	#pwv_min_index = np.where(pwv_chi2_array == np.min(pwv_chi2_array))[0][0]
 	#pwv_0         = pwv_list[pwv_min_index]
 
-	if instrument == 'nirspec':
+	if instrument.lower() == 'nirspec':
 		A_min = -0.1
 		A_max = +0.1
 		pwv_max = 20.0
-	elif instrument == 'igrins':
+	elif instrument.lower() == 'igrins':
 		A_min = -1000.0
 		A_max = +1000.0
 		pwv_max = 5.0
@@ -316,9 +319,9 @@ def lnlike(theta, data=data):
 
 	lsf, airmass, pwv, A, B = theta
 
-	if data.instrument == 'nirspec':
+	if data.instrument.lower() == 'nirspec':
 		deg = 2
-	elif data.instrument == 'igrins':
+	elif data.instrument.lower() == 'igrins':
 		deg = 4
 
 	model = tellurics.makeTelluricModel(lsf, airmass, pwv, A, B, data=data, deg=deg, niter=None)
@@ -335,10 +338,10 @@ def lnprior(theta):
 	#lsf, airmass, pwv, alpha, A, B = theta
 	lsf, airmass, pwv, A, B = theta
 
-	if instrument == 'nirspec':
+	if instrument.lower() == 'nirspec':
 		pwv_max = 20.0
 		A_max   = 500.0
-	elif instrument == 'igrins':
+	elif instrument.lower() == 'igrins':
 		pwv_max = 5.0
 		A_max   = 5000.0
 
@@ -346,7 +349,7 @@ def lnprior(theta):
 				'airmass_min':1.0   ,  'airmass_max':3.0,
 				'pwv_min':0.50 		,  'pwv_max':pwv_max,
 				'A_min':-A_max 		,  'A_max':A_max,
-				'B_min':-0.04  	    ,  'B_max':0.04    }
+				'B_min':-1.  	    ,  'B_max':1.    }
 
 	if  limits['lsf_min']     < lsf     < limits['lsf_max'] \
 	and limits['airmass_min'] < airmass < limits['airmass_max']\
@@ -431,9 +434,7 @@ file_log.write("A_mcmc {}\n".format(str(A_mcmc)))
 file_log.write("B_mcmc {}\n".format(str(B_mcmc)))
 file_log.close()
 
-print(lsf_mcmc, airmass_mcmc, pwv_mcmc, A_mcmc, B_mcmc)
-
-if ('_' in tell_sp.name) and (instrument != 'igrins'):
+if ('_' in tell_sp.name) and (instrument.lower() != 'igrins'):
 	tell_data_name = tell_sp.name.split('_')[0]
 
 ## triangular plots
@@ -451,6 +452,10 @@ plt.minorticks_on()
 fig.savefig(save_to_path+'/triangle.png', dpi=300, bbox_inches='tight')
 #plt.show()
 plt.close()
+
+# Raise a warning if the wavelength shift is larger than 1 angstrom
+if abs(B_mcmc[0]) > 1: 
+	warnings.warn("Wavelength shift of %0.3f is greater than expected threshold of 1 angstrom. Use caution in wavelength solution."%B_mcmc[0], WavelengthCalibrationWarning)
 
 data2               = copy.deepcopy(data)
 data2.wave          = data2.wave + B_mcmc[0]
@@ -536,6 +541,9 @@ if save is True:
 		data_path = tell_sp.path + '/' + tell_sp.name + '_' + str(tell_sp.order) + '_all.fits'
 	elif instrument == 'igrins':
 		data_path = tell_sp.path + '/' + tell_sp.name2 + '.wave.fits'
+		print(tell_sp.path)
+		print(tell_sp.name2)
+		print(data_path)
 	with fits.open(data_path) as hdulist:
 		hdulist[0].header['LSF']          = lsf_mcmc[0]
 		hdulist[0].header['AM_FIT']       = airmass_mcmc[0]
