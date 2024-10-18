@@ -9,7 +9,7 @@ from ..utils.interpolations import trilinear_interpolation
 ##############################################################################################################
 
 
-def InterpModel(teff, logg=4, metal=0, alpha=0, kzz=0, co=0, modelset='phoenix-aces-agss-cond-2011', instrument='nirspec', order='O33'):
+def InterpModel(teff, logg=4, metal=0, alpha=0, kzz=0, co=0, modelset='phoenix-aces-agss-cond-2011', instrument='nirspec', order=33):
     #print('Parameters', teff, logg, modelset, instrument, order)
     FULL_PATH  = os.path.realpath(__file__)
     BASE, NAME = os.path.split(FULL_PATH)
@@ -52,27 +52,27 @@ def InterpModel(teff, logg=4, metal=0, alpha=0, kzz=0, co=0, modelset='phoenix-a
             if instrument.lower() == 'nirspec':
                 filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-O%s.fits'%(instrument.upper(), str(order))
             else:
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_FeH0.00_Y0.28_CO1.00' + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         elif modelset.lower() == 'sonora-2023':
             if instrument.lower() == 'nirspec':
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_CO{0:.2f}'.format(float(co)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-O%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_CO{0:.2f}'.format(float(co)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-O%s.fits'%(instrument.upper(), str(order).upper())
             else:
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_CO{0:.2f}'.format(float(co)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_CO{0:.2f}'.format(float(co)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         elif modelset.lower() == 'marcs-apogee-dr15':
             cm      = kwargs.get('cm', 0)
             nm      = kwargs.get('nm', 0) 
-            filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_cm{0:.2f}'.format(float(cm)) + '_nm{0:.2f}'.format(float(nm)) + '_%s-%s.fits'%(instrument.upper(), order.upper())
+            filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_cm{0:.2f}'.format(float(cm)) + '_nm{0:.2f}'.format(float(nm)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         elif kzz != 0:
-            filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-%s.fits'%(instrument.upper(), order.upper())
+            filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
         else: 
             if instrument.lower()in ['nirspec', 'hires', 'igrins']:
-                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-O%s.fits'%(instrument.upper(), order.upper())
+                filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-O%s.fits'%(instrument.upper(), str(order).upper())
             else:
                 if modelset == 'hd206893-qkbbhires':
                     kzz = 1e8
-                    filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-%s.fits'%(instrument.upper(), order.upper())
+                    filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_kzz{0:.2f}'.format(float(kzz)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())
                 else:
-                    filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-%s.fits'%(instrument.upper(), order.upper())        
+                    filename = '%s'%smart.ModelSets[modelset.lower()] + '_t{0:03d}'.format(int(temp.data[0])) + '_g{0:.2f}'.format(float(logg)) + '_z{0:.2f}'.format(float(metal)) + '_en{0:.2f}'.format(float(alpha)) + '_%s-%s.fits'%(instrument.upper(), str(order).upper())        
         # Read in the model FITS file
         if modelset.lower() == 'btsettl08': 
             Tab = Table.read(path+filename, format='ascii.tab', names=['wave', 'flux'])
