@@ -42,6 +42,8 @@ def InterpModel(teff, logg=4, metal=0, alpha=0, kzz=0, co=0, modelset='phoenix-a
         gridfile   = kwargs.get('gridfile', None)
         instrument = kwargs.get('instrument', 'nirspec')
         order      = kwargs.get('order', None)
+        # Grid values arrive as one-element table columns; float() of a one-element array is an error in NumPy >= 2.4.
+        logg, metal, alpha, kzz, co = [np.ravel(_)[0] if np.ndim(_) else _ for _ in (logg, metal, alpha, kzz, co)]
         #print(temp, logg, metal, alpha)
         if gridfile is None:
             raise ValueError('Model gridfile must be provided.') 
